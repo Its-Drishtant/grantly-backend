@@ -1,0 +1,75 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests and PostgreSQL migration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: grantly_ci
+          POSTGRES_USER: grantly
+          POSTGRES_PASSWORD: grantly-ci-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U grantly -d grantly_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Check installed dependencies
+        run: python -m pip check
+
+      - name: Run backend tests
+        run: python -m pytest tests -q
+
+      - name: Validate PostgreSQL migration
+        run: python -m alembic -c alembic.ini upgrade head
+        env:
+          DATABASE_URL: postgresql+psycopg://grantly:grantly-ci-password@127.0.0.1:5432/grantly_ci
+          ENVIRONMENT: production
+          FRONTEND_URL: https://grantly.example
+          JWT_SECRET: ci-only-secret-at-least-32-bytes-long
+          UPLOAD_DIR: /tmp/grantly-ci-uploads
+
+      - name: Import production application
+        run: python -c "from app.main import app; assert app.title == 'Grantly'"
+        env:
+          DATABASE_URL: postgresql+psycopg://grantly:grantly-ci-password@127.0.0.1:5432/grantly_ci
+          ENVIRONMENT: production
+          FRONTEND_URL: https://grantly.example
+          JWT_SECRET: ci-only-secret-at-least-32-bytes-long
+          UPLOAD_DIR: /tmp/grantly-ci-uploads
+
