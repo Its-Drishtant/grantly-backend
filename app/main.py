@@ -20,7 +20,12 @@ from sqlalchemy import create_engine, String, ForeignKey, UniqueConstraint, sele
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker, Session
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./grantly.db')
-engine = create_engine(DATABASE_URL, **({'connect_args': {'check_same_thread': False}} if DATABASE_URL.startswith('sqlite') else {}))
+engine_options = (
+    {'connect_args': {'check_same_thread': False}}
+    if DATABASE_URL.startswith('sqlite')
+    else {'pool_pre_ping': True, 'pool_recycle': 300}
+)
+engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(engine, expire_on_commit=False)
 PRODUCTION = os.getenv('ENVIRONMENT') == 'production'
 SECRET = os.getenv('JWT_SECRET') or secrets.token_hex(32)
